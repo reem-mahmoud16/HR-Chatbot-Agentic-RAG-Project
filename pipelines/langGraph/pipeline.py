@@ -34,7 +34,6 @@ class AgenticLangGraphRAGPipeline(IRAGPipeline):
                 
         # Retrieve from primary source
         primary_source = decision.primary_source
-        print(primary_source, "------------------------------------->>>>>>>>>>>>>>>>>")
         if 'mongo' in primary_source.lower():
             context = self.retriever(state, "mongo")
 
@@ -81,7 +80,6 @@ class AgenticLangGraphRAGPipeline(IRAGPipeline):
 
 
     def generate_LLM_Answer(self, user_prompt: str) -> str:
-        print("---------done-----------")
         result = self.app.invoke({"question": user_prompt})
         return result["response"].content
         
