@@ -2,7 +2,7 @@ import os
 from typing import Dict, List
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
-from langchain_core.pydantic_v1 import BaseModel, Field
+from pydantic import BaseModel, Field
 from Services.llm_service import GoogleLLMService
 from config import DATA_SOURCES
 

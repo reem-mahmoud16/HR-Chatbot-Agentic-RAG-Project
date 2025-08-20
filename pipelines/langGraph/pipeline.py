@@ -5,7 +5,7 @@ from ..interfaces.pipeline import IRAGPipeline
 from Services.vector_db_service import ChromaDBService
 from Services.llm_service import GoogleLLMService
 from models.stateScema import AgentState
-from dataSourceRouter import RoutingService
+from pipelines.langGraph.dataSourceRouter import RoutingService
 
 
 class AgenticLangGraphRAGPipeline(IRAGPipeline):
