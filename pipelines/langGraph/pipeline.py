@@ -19,27 +19,29 @@ class AgenticLangGraphRAGPipeline(IRAGPipeline):
         self.app = None
         self.build_graph()
     
-    
+
     def route_by_query(self, state: dict):
         """Main method to choose the appropriate sources and route to its node"""
         # First, determine the best data source
         decision = self.routingService.determine_data_source(state.question)
-        print("************************************")
-        print(decision.primary_source)
-        print("************************************")
+
         # Retrieve from primary source
         primary_source = decision.primary_source
 
-        if primary_source.startswith('mongo_'):
+        if "mongo" in primary_source.lower():
             return "mongodb_retriever"
 
-        elif primary_source.startswith('text_files_'):
+        elif "text" in primary_source.lower():
             return "textfile_retriever"
+        else:
+            state["context"] = "irrelevant data"
+            return "generator"
 
 
     def MongoDB_Node(self, state: dict):
         self.vectorstore = self.chromaDBService.initialize_collection(collection_name="HR_Policy_Collection", data_source = "mongo")
         docs = self.vectorstore.as_retriever().invoke(state.question)
+        print(docs)
         return {"context": docs}
 
     def TextFileDB_Node(self, state: dict):
@@ -53,6 +55,7 @@ class AgenticLangGraphRAGPipeline(IRAGPipeline):
             ("system", """You are an HR policy assistant. Answer ONLY using:
             - Company Policies: {context}
             - Base your response strictly on the policies below.
+            If context is irrelevant, explain that to the user
             If unsure, say "I cannot find this in our policies"."""),
             ("user", "{question}")
         ])
@@ -76,7 +79,8 @@ class AgenticLangGraphRAGPipeline(IRAGPipeline):
             self.route_by_query,
             {
                 "mongodb_retriever": "mongodb_retriever",
-                "textfile_retriever":"textfile_retriever"
+                "textfile_retriever":"textfile_retriever",
+                "generator":"generator"
             }
         )
 
@@ -92,7 +96,6 @@ class AgenticLangGraphRAGPipeline(IRAGPipeline):
 
 
     def generate_LLM_Answer(self, user_prompt: str) -> str:
-        print("---------done-----------")
         result = self.app.invoke({"question": user_prompt})
         return result["response"].content
         
