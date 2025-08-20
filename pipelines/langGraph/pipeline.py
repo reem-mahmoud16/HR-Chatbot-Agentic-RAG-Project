@@ -19,14 +19,14 @@ class AgenticLangGraphRAGPipeline(IRAGPipeline):
         self.app = None
         self.build_graph()
     
-    def retriever_node(self, state: dict, data_source: str):
+    def retriever(self, state: dict, data_source: str):
         # Retrieve relevant HR policies
         self.vectorstore = self.chromaDBService.initialize_collection(collection_name="HR_Policy_Collection", data_source = data_source)
         docs = self.vectorstore.as_retriever().invoke(state.question)
         return {"context": docs}
 
 
-    def retrieve_information(self, state: dict):
+    def retriever_node(self, state: dict):
         """Main method to retrieve information from appropriate sources"""
         # First, determine the best data source
         decision = self.routingService.determine_data_source(state.question)
@@ -35,10 +35,10 @@ class AgenticLangGraphRAGPipeline(IRAGPipeline):
         primary_source = decision.primary_source
 
         if primary_source.startswith('mongo_'):
-            context = self.retriever_node(state, "mongo")
+            context = self.retriever(state, "mongo")
 
         elif primary_source.startswith('text_files_'):
-            context = self.retriever_node(state, "textfile")
+            context = self.retriever(state, "textfile")
 
         return context
 
@@ -62,7 +62,7 @@ class AgenticLangGraphRAGPipeline(IRAGPipeline):
         workflow = StateGraph(AgentState)
 
         # Add nodes
-        workflow.add_node("retriever", self.retrieve_information)
+        workflow.add_node("retriever", self.retriever_node)
         workflow.add_node("generator", self.generator_node)
 
         # Connect nodes (retrieve → answer)
