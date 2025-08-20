@@ -5,22 +5,42 @@ from ..interfaces.pipeline import IRAGPipeline
 from Services.vector_db_service import ChromaDBService
 from Services.llm_service import GoogleLLMService
 from models.stateScema import AgentState
+from dataSourceRouter import RoutingService
 
 
 class AgenticLangGraphRAGPipeline(IRAGPipeline):
     
     def __init__(self):
         self.chromaDBService = ChromaDBService()
-        self.vectorstore = self.chromaDBService.initialize_collection(collection_name="HR_Policy_Collection")
+        self.vectorstore = None
         self.googleLLMService = GoogleLLMService()
         self.llm = self.googleLLMService.llm
+        self.routingService = RoutingService()
         self.app = None
         self.build_graph()
     
-    def retriever_node(self, state: dict):
+    def retriever_node(self, state: dict, data_source: str):
         # Retrieve relevant HR policies
+        self.vectorstore = self.chromaDBService.initialize_collection(collection_name="HR_Policy_Collection", data_source = data_source)
         docs = self.vectorstore.as_retriever().invoke(state.question)
         return {"context": docs}
+
+
+    def retrieve_information(self, state: dict):
+        """Main method to retrieve information from appropriate sources"""
+        # First, determine the best data source
+        decision = self.routingService.determine_data_source(state.question)
+                
+        # Retrieve from primary source
+        primary_source = decision.primary_source
+
+        if primary_source.startswith('mongo_'):
+            context = self.retriever_node(state, "mongo")
+
+        elif primary_source.startswith('text_files_'):
+            context = self.retriever_node(state, "textfile")
+
+        return context
 
     def generator_node(self, state: dict):
 
@@ -42,7 +62,7 @@ class AgenticLangGraphRAGPipeline(IRAGPipeline):
         workflow = StateGraph(AgentState)
 
         # Add nodes
-        workflow.add_node("retriever", self.retriever_node)
+        workflow.add_node("retriever", self.retrieve_information)
         workflow.add_node("generator", self.generator_node)
 
         # Connect nodes (retrieve → answer)

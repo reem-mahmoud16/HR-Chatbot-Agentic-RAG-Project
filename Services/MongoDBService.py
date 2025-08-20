@@ -14,7 +14,7 @@ class MongoDBHandler:
 
     def get_all_policies(self):
         policies = list(self.collection.find({}))
-        return policies[0]["full_text"] + policies[1]["full_text"]
+        return policies[0]["full_text"]
     
 
 

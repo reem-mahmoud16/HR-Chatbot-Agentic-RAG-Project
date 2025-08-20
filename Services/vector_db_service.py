@@ -4,6 +4,7 @@ from langchain_core.documents import Document
 from langchain_community.vectorstores import Chroma
 from Services.MongoDBService import MongoDBHandler
 from Services.embedding_service import GoogleEmbeddingService
+from datasetHandler import DatasetHandler
 
 class IVectorDBService(ABC):
     @abstractmethod
@@ -18,12 +19,18 @@ class ChromaDBService(IVectorDBService):
     def __init__(self):
         self.embedding_service = GoogleEmbeddingService()
         self.mongoDBHandler = MongoDBHandler()
+        self.datasetHandler = DatasetHandler()
         self.splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=200)
         self.vectorstore = None
 
-    def initialize_collection(self, collection_name: str):
+    def initialize_collection(self, collection_name: str, data_source: str):
         
-        text_context = self.mongoDBHandler.get_all_policies()
+        if data_source == "mongo":
+            text_context = self.mongoDBHandler.get_all_policies()
+        elif data_source == "textfile":
+            data_doc = open(self.datasetHandler.get_dataset_file_by_index(2), "r")
+            text_context = data_doc.read()
+
         chunks = self.splitter.split_text(text_context)
         documents = [Document(page_content=chunk) for chunk in chunks]
         
