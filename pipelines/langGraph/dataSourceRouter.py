@@ -28,11 +28,10 @@ class RoutingService:
         Guidelines:
         1. Choose MongoDB for HR policies about Purpose, Scope, Workplace Conduct, Compensation and Benefits and Leave Policies
         2. Choose the text File for HR policies about Working Hours and Attendance, Termination and Resignation, Confidentiality and Data Protection
-        3. Consider using multiple sources if the question spans different domains
-        5. For general HR questions, consider both sources
+
 
         Respond with JSON containing:
-        - primary_source: the main data source to query first
+        - primary_source: the main data source to query first (textfile or mongo)
         - reasoning: brief explanation of your choice
 
         Current user query: {query}

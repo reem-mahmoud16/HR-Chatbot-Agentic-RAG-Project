@@ -5,6 +5,7 @@ from langchain_community.vectorstores import Chroma
 from Services.MongoDBService import MongoDBHandler
 from Services.embedding_service import GoogleEmbeddingService
 from datasetHandler import DatasetHandler
+from config import DATA_SOURCES
 
 class IVectorDBService(ABC):
     @abstractmethod
@@ -20,7 +21,7 @@ class ChromaDBService(IVectorDBService):
         self.embedding_service = GoogleEmbeddingService()
         self.mongoDBHandler = MongoDBHandler()
         self.datasetHandler = DatasetHandler()
-        self.splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=200)
+        self.splitter = RecursiveCharacterTextSplitter(chunk_size=700, chunk_overlap=200)
         self.vectorstore = None
 
     def initialize_collection(self, collection_name: str, data_source: str):
@@ -28,7 +29,7 @@ class ChromaDBService(IVectorDBService):
         if data_source == "mongo":
             text_context = self.mongoDBHandler.get_all_policies()
         elif data_source == "textfile":
-            data_doc = open(self.datasetHandler.get_dataset_file_by_index(2), "r")
+            data_doc = open(self.datasetHandler.get_dataset_file_by_index(DATA_SOURCES["text_hr_policies"]["path"],2), "r")
             text_context = data_doc.read()
 
         chunks = self.splitter.split_text(text_context)

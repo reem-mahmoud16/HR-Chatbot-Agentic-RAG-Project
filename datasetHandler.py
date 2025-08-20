@@ -25,5 +25,5 @@ class DatasetHandler:
         print(f"\nSuccessfully merged {len(self.hr_files)} files into {self.output_file}")
 
     def get_dataset_file_by_index(self, dataPath: str, index: int):
-        filepath = os.path.join(dataPath, f"HR_Policy_Dataset{index}")
+        filepath = os.path.join(dataPath, f"HR_Policy_Dataset{index}.txt")
         return filepath

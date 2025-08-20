@@ -30,15 +30,18 @@ class AgenticLangGraphRAGPipeline(IRAGPipeline):
         """Main method to retrieve information from appropriate sources"""
         # First, determine the best data source
         decision = self.routingService.determine_data_source(state.question)
+        context = ""
                 
         # Retrieve from primary source
         primary_source = decision.primary_source
-
-        if primary_source.startswith('mongo_'):
+        print(primary_source, "------------------------------------->>>>>>>>>>>>>>>>>")
+        if 'mongo' in primary_source.lower():
             context = self.retriever(state, "mongo")
 
-        elif primary_source.startswith('text_files_'):
+        elif 'text' in primary_source.lower():
             context = self.retriever(state, "textfile")
+        else:
+            context = "irrelevant data"
 
         return context
 
@@ -47,6 +50,7 @@ class AgenticLangGraphRAGPipeline(IRAGPipeline):
         hr_prompt = ChatPromptTemplate.from_messages([
             ("system", """You are an HR policy assistant. Answer ONLY using:
             - Company Policies: {context}
+            - if context is irrelevant data explain that to user
             - Base your response strictly on the policies below.
             If unsure, say "I cannot find this in our policies"."""),
             ("user", "{question}")
