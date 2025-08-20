@@ -1,5 +1,5 @@
 from langchain_core.prompts import ChatPromptTemplate
-from langgraph.graph import StateGraph
+from langgraph.graph import StateGraph, START, END
 
 from ..interfaces.pipeline import IRAGPipeline
 from Services.vector_db_service import ChromaDBService
@@ -19,28 +19,33 @@ class AgenticLangGraphRAGPipeline(IRAGPipeline):
         self.app = None
         self.build_graph()
     
-    def retriever(self, state: dict, data_source: str):
-        # Retrieve relevant HR policies
-        self.vectorstore = self.chromaDBService.initialize_collection(collection_name="HR_Policy_Collection", data_source = data_source)
-        docs = self.vectorstore.as_retriever().invoke(state.question)
-        return {"context": docs}
-
-
-    def retriever_node(self, state: dict):
-        """Main method to retrieve information from appropriate sources"""
+    
+    def route_by_query(self, state: dict):
+        """Main method to choose the appropriate sources and route to its node"""
         # First, determine the best data source
         decision = self.routingService.determine_data_source(state.question)
-                
+        print("************************************")
+        print(decision.primary_source)
+        print("************************************")
         # Retrieve from primary source
         primary_source = decision.primary_source
 
         if primary_source.startswith('mongo_'):
-            context = self.retriever(state, "mongo")
+            return "mongodb_retriever"
 
         elif primary_source.startswith('text_files_'):
-            context = self.retriever(state, "textfile")
+            return "textfile_retriever"
 
-        return context
+
+    def MongoDB_Node(self, state: dict):
+        self.vectorstore = self.chromaDBService.initialize_collection(collection_name="HR_Policy_Collection", data_source = "mongo")
+        docs = self.vectorstore.as_retriever().invoke(state.question)
+        return {"context": docs}
+
+    def TextFileDB_Node(self, state: dict):
+        self.vectorstore = self.chromaDBService.initialize_collection(collection_name="HR_Policy_Collection", data_source = "textfile")
+        docs = self.vectorstore.as_retriever().invoke(state.question)
+        return {"context": docs}
 
     def generator_node(self, state: dict):
 
@@ -62,14 +67,24 @@ class AgenticLangGraphRAGPipeline(IRAGPipeline):
         workflow = StateGraph(AgentState)
 
         # Add nodes
-        workflow.add_node("retriever", self.retriever_node)
+        workflow.add_node("mongodb_retriever", self.MongoDB_Node)
+        workflow.add_node("textfile_retriever", self.TextFileDB_Node)
         workflow.add_node("generator", self.generator_node)
 
-        # Connect nodes (retrieve → answer)
-        workflow.add_edge("retriever", "generator")
+        workflow.add_conditional_edges(
+            START,
+            self.route_by_query,
+            {
+                "mongodb_retriever": "mongodb_retriever",
+                "textfile_retriever":"textfile_retriever"
+            }
+        )
 
-        # Set entry point
-        workflow.set_entry_point("retriever")
+        workflow.add_edge("mongodb_retriever", "generator")
+
+        workflow.add_edge("textfile_retriever", "generator")
+
+        workflow.add_edge("generator", END)
 
         # Compile
         self.app = workflow.compile()

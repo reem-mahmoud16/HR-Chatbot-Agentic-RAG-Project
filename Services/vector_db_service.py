@@ -30,6 +30,7 @@ class ChromaDBService(IVectorDBService):
         elif data_source == "textfile":
             data_doc = open(self.datasetHandler.get_dataset_file_by_index(2), "r")
             text_context = data_doc.read()
+            print(text_context)
 
         chunks = self.splitter.split_text(text_context)
         documents = [Document(page_content=chunk) for chunk in chunks]
