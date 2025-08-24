@@ -13,7 +13,8 @@ app = FastAPI(
 )
 
 
-@app.post("/api/HR-chatbot")
+@app.post("/api/HR-chatbotV4")
 async def process_data(user_query: ChatRequest):
     response = hr_chatbot.get_answer(user_query.Prompt)
+    print(response)
     return ChatResponse(Answer=response)

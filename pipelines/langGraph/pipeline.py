@@ -1,9 +1,10 @@
 from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph import StateGraph, START, END
-
+from langchain_core.documents import Document
 from ..interfaces.pipeline import IRAGPipeline
 from Services.vector_db_service import ChromaDBService
 from Services.llm_service import GoogleLLMService
+from Services.MongoDBService import MongoDBHandler
 from models.stateScema import AgentState
 from pipelines.langGraph.dataSourceRouter import RoutingService
 
@@ -15,6 +16,7 @@ class AgenticLangGraphRAGPipeline(IRAGPipeline):
         self.vectorstore = None
         self.googleLLMService = GoogleLLMService()
         self.llm = self.googleLLMService.llm
+        self.mongoDBHandler = MongoDBHandler()
         self.routingService = RoutingService()
         self.app = None
         self.build_graph()
@@ -27,36 +29,70 @@ class AgenticLangGraphRAGPipeline(IRAGPipeline):
 
         # Retrieve from primary source
         primary_source = decision.primary_source
+        employees_query = decision.employees_query
+
 
         if "mongo" in primary_source.lower():
-            return "mongodb_retriever"
+            return "hr_mongodb_retriever"
 
         elif "text" in primary_source.lower():
-            return "textfile_retriever"
+            return "hr_textfile_retriever"
+        
+        elif employees_query == True:
+            return "employees_data_retriever"
+        
         else:
             state["context"] = "irrelevant data"
             return "generator"
 
 
-    def MongoDB_Node(self, state: dict):
+    def HR_Policy_MongoDB_Node(self, state: dict):
         self.vectorstore = self.chromaDBService.initialize_collection(collection_name="HR_Policy_Collection", data_source = "mongo")
         docs = self.vectorstore.as_retriever().invoke(state.question)
-        print(docs)
         return {"context": docs}
 
-    def TextFileDB_Node(self, state: dict):
+    def HR_Policy_TextFileDB_Node(self, state: dict):
         self.vectorstore = self.chromaDBService.initialize_collection(collection_name="HR_Policy_Collection", data_source = "textfile")
         docs = self.vectorstore.as_retriever().invoke(state.question)
         return {"context": docs}
+    
+    def Employees_Data_Query_Tool_Node(self, state: dict):
+    
+        docs = self.mongoDBHandler.query_employees_database(state.question)
+        print("came here!!!!!!!!!!!!!!!!!!!")
+        print(docs)
+        # Convert MongoDB dicts to LangChain Documents
+        document_objects = []
+        for emp in docs["results"]:
+            # Create a string representation for the LLM
+            content = f"Employee: {emp['employee_name']}, Department: {emp['department']}, Title: {emp['job_title']}, Joined: {emp['date_joined'].strftime('%Y-%m-%d')}"
+            
+            document_objects.append(
+                Document(
+                    page_content=content,  # ← Required field for Document
+                    metadata={
+                        "employee_id": emp["employee_id"],
+                        "department": emp["department"],
+                        "date_joined": emp["date_joined"]
+                    }
+                )
+            )
+        
+        return {"context": document_objects}
+        
 
     def generator_node(self, state: dict):
 
         hr_prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are an HR policy assistant. Answer ONLY using:
-            - Company Policies: {context}
-            - Base your response strictly on the policies below.
+            ("system", """You are a chatbot assistant who answers questions about XYZ company. 
+            if the given context was a paragraph about HR policies, Answer ONLY using it.
+                - Base your response strictly on the policies below.
+                - If unsure, say "I cannot find this in our policies"
+            if the given context was data about employees, Answer the question using it.
+            
             If context is irrelevant, explain that to the user
-            If unsure, say "I cannot find this in our policies"."""),
+            
+            - Context: {context}"""),
             ("user", "{question}")
         ])
         chain = hr_prompt | self.llm  
@@ -70,26 +106,31 @@ class AgenticLangGraphRAGPipeline(IRAGPipeline):
         workflow = StateGraph(AgentState)
 
         # Add nodes
-        workflow.add_node("mongodb_retriever", self.MongoDB_Node)
-        workflow.add_node("textfile_retriever", self.TextFileDB_Node)
+        workflow.add_node("hr_mongodb_retriever", self.HR_Policy_MongoDB_Node)
+        workflow.add_node("hr_textfile_retriever", self.HR_Policy_TextFileDB_Node)
+        workflow.add_node("employees_data_retriever", self.Employees_Data_Query_Tool_Node)
         workflow.add_node("generator", self.generator_node)
 
         workflow.add_conditional_edges(
             START,
             self.route_by_query,
             {
-                "mongodb_retriever": "mongodb_retriever",
-                "textfile_retriever":"textfile_retriever",
+                "hr_mongodb_retriever": "hr_mongodb_retriever",
+                "hr_textfile_retriever":"hr_textfile_retriever",
+                "employees_data_retriever":"employees_data_retriever",
                 "generator":"generator"
             }
         )
 
-        workflow.add_edge("mongodb_retriever", "generator")
+        workflow.add_edge("hr_mongodb_retriever", "generator")
 
-        workflow.add_edge("textfile_retriever", "generator")
+        workflow.add_edge("hr_textfile_retriever", "generator")
+
+        workflow.add_edge("employees_data_retriever", "generator")
 
         workflow.add_edge("generator", END)
 
+        
         # Compile
         self.app = workflow.compile()
         

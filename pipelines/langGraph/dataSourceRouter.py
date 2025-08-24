@@ -12,6 +12,7 @@ class DataSourceDecision(BaseModel):
     """Model for the data source decision"""
     primary_source: str = Field(description="The primary data source to query")
     reasoning: str = Field(description="Brief explanation of why that source was chosen")
+    employees_query: bool = Field(description="tells if user asks about employees")
 
 class RoutingService:
     def __init__(self):
@@ -20,20 +21,32 @@ class RoutingService:
         self.parser = JsonOutputParser(pydantic_object=DataSourceDecision)
         
         self.routing_agent_system_prompt = """You are an expert data retrieval routing system. 
-        Your task is to analyze the user's question and determine the most appropriate data source(s) to retrieve information from.
+        Your task is to analyze the user's question and determine if the user wants to query about employees data 
+        or wants to get information about HR Policies
+        
+        if the user's question was about HR Policies, you should  choose the most appropriate data source(s) to retrieve information from.
 
-        Available Data Sources:
-        {data_sources}
+            Available Data Sources:
+            {data_sources}
 
-        Guidelines:
-        1. Choose MongoDB for HR policies about Purpose, Scope, Workplace Conduct, Compensation and Benefits and Leave Policies
-        2. Choose the text File for HR policies about Working Hours and Attendance, Termination and Resignation, Confidentiality and Data Protection
-        3. Consider using multiple sources if the question spans different domains
-        5. For general HR questions, consider both sources
+            Guidelines:
+            1. Choose MongoDB for HR policies about Purpose, Scope, Workplace Conduct, Compensation and Benefits and Leave Policies
+            2. Choose the text File for HR policies about Working Hours and Attendance, Termination and Resignation, Confidentiality and Data Protection
+            3. Consider using multiple sources if the question spans different domains
+            5. For general HR questions, consider both sources
 
-        Respond with JSON containing:
-        - primary_source: the main data source to query first (textfile or mongo)
-        - reasoning: brief explanation of your choice
+        Output format: 
+            if the user's question was about HR Policies:
+                Respond with JSON containing:
+                    - primary_source: the main data source to query first (textfile or mongo)
+                    - reasoning: brief explanation of your choice
+                    - employees_query (bool): False
+
+        if the user's question was not about hr policies and was about employees data
+            Respond with JSON containing:
+                - primary_source: empty string ""
+                - reasoning: brief explanation of your choice
+                - employees_query (bool): True
 
         Current user query: {query}
         """
