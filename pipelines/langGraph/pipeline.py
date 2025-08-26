@@ -7,6 +7,7 @@ from Services.llm_service import GoogleLLMService
 from Services.MongoDBService import MongoDBHandler
 from models.stateScema import AgentState
 from pipelines.langGraph.dataSourceRouter import RoutingService
+from config import generator_node_system_prompt
 
 
 class AgenticLangGraphRAGPipeline(IRAGPipeline):
@@ -27,19 +28,17 @@ class AgenticLangGraphRAGPipeline(IRAGPipeline):
         # First, determine the best data source
         decision = self.routingService.determine_data_source(state.question)
 
-        # Retrieve from primary source
         primary_source = decision.primary_source
         employees_query = decision.employees_query
 
+        if employees_query == True:
+            return "employees_data_retriever"
 
-        if "mongo" in primary_source.lower():
+        elif "mongo" in primary_source.lower():
             return "hr_mongodb_retriever"
 
         elif "text" in primary_source.lower():
             return "hr_textfile_retriever"
-        
-        elif employees_query == True:
-            return "employees_data_retriever"
         
         else:
             state["context"] = "irrelevant data"
@@ -50,17 +49,18 @@ class AgenticLangGraphRAGPipeline(IRAGPipeline):
         self.vectorstore = self.chromaDBService.initialize_collection(collection_name="HR_Policy_Collection", data_source = "mongo")
         docs = self.vectorstore.as_retriever().invoke(state.question)
         return {"context": docs}
+    
 
     def HR_Policy_TextFileDB_Node(self, state: dict):
         self.vectorstore = self.chromaDBService.initialize_collection(collection_name="HR_Policy_Collection", data_source = "textfile")
         docs = self.vectorstore.as_retriever().invoke(state.question)
         return {"context": docs}
     
+    
     def Employees_Data_Query_Tool_Node(self, state: dict):
     
         docs = self.mongoDBHandler.query_employees_database(state.question)
-        print("came here!!!!!!!!!!!!!!!!!!!")
-        print(docs)
+
         # Convert MongoDB dicts to LangChain Documents
         document_objects = []
         for emp in docs["results"]:
@@ -84,15 +84,7 @@ class AgenticLangGraphRAGPipeline(IRAGPipeline):
     def generator_node(self, state: dict):
 
         hr_prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are a chatbot assistant who answers questions about XYZ company. 
-            if the given context was a paragraph about HR policies, Answer ONLY using it.
-                - Base your response strictly on the policies below.
-                - If unsure, say "I cannot find this in our policies"
-            if the given context was data about employees, Answer the question using it.
-            
-            If context is irrelevant, explain that to the user
-            
-            - Context: {context}"""),
+            ("system", generator_node_system_prompt),
             ("user", "{question}")
         ])
         chain = hr_prompt | self.llm  
@@ -141,5 +133,3 @@ class AgenticLangGraphRAGPipeline(IRAGPipeline):
         return result["response"].content
         
     
-    def generate_system_prompt(self, query: str) -> str:
-        pass

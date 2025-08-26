@@ -7,7 +7,7 @@ import os
 from dotenv import load_dotenv
 import json
 from Services.llm_service import GoogleLLMService
-from config import system_prompt
+from config import question_query_Converter_system_prompt
 
 load_dotenv()
 
@@ -32,7 +32,7 @@ class MongoDBHandler:
         googleLLMService = GoogleLLMService()
         self.llm = googleLLMService.llm
 
-        self.system_prompt = system_prompt
+        self.system_prompt = question_query_Converter_system_prompt
 
         prompt_template = ChatPromptTemplate.from_messages([
             ("system", self.system_prompt),
@@ -43,10 +43,6 @@ class MongoDBHandler:
         query_analysis_chain = prompt_template | self.llm | StrOutputParser()
 
         return query_analysis_chain
-    
-    def query_employees_database_test(self) -> str:
-        eng = list(self.Employees_collection.find({"department": "Engineering"}))
-        return eng
     
 
     @tool
@@ -59,7 +55,8 @@ class MongoDBHandler:
         - "How many engineers are in the IT department?"
         - "Find all managers earning more than $100,000"
         - "Show me employees who joined after January 2023"
-        - "Who works in the Sales department?"""
+        - "Who works in the Sales department?
+        """
 
         mongoDBHandler = MongoDBHandler()
 
