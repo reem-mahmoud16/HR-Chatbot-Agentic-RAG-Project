@@ -1,135 +1,76 @@
-from langchain_core.prompts import ChatPromptTemplate
-from langgraph.graph import StateGraph, START, END
-from langchain_core.documents import Document
+from langchain_core.messages import SystemMessage
+from langgraph.prebuilt import create_react_agent
+from langgraph.prebuilt.chat_agent_executor import AgentState
+from langchain_core.tools import tool
+from Services.llm_service import GoogleLLMService
+from Services.MongoDBService import MongoDBService
+from langchain_mongodb.agent_toolkit import (
+    MongoDBDatabase,
+    MongoDBDatabaseToolkit,
+    MONGODB_AGENT_SYSTEM_PROMPT,
+)
+from langchain_core.messages import HumanMessage
+from langgraph.prebuilt import create_react_agent
+from langgraph.checkpoint.mongodb import MongoDBSaver
 from ..interfaces.pipeline import IRAGPipeline
 from Services.vector_db_service import ChromaDBService
-from Services.llm_service import GoogleLLMService
-from Services.MongoDBService import MongoDBHandler
-from models.stateScema import AgentState
-from pipelines.langGraph.dataSourceRouter import RoutingService
-from config import generator_node_system_prompt
 
+class AgentCustomTools:
+
+    def __init__(self):
+        self.chromaDBService = ChromaDBService()
+
+    @tool
+    def TextFile_HR_policies_query(self, user_query):
+        """
+        Retrieves information from HR policies stored in a separate text file.
+
+        Use this tool for queries related to the company's policies on:
+        - Working Hours and Attendance
+        - Termination and Resignation
+        - Confidentiality and Data Protection
+
+        Input should be the user's full, unedited question. The tool returns relevant
+        text excerpts from the policy documents.
+        """
+        
+        return self.chromaDBService.query(user_query)
 
 class AgenticLangGraphRAGPipeline(IRAGPipeline):
     
     def __init__(self):
-        self.chromaDBService = ChromaDBService()
-        self.vectorstore = None
-        self.googleLLMService = GoogleLLMService()
-        self.llm = self.googleLLMService.llm
-        self.mongoDBHandler = MongoDBHandler()
-        self.routingService = RoutingService()
-        self.app = None
-        self.build_graph()
-    
+        Google_LLM = GoogleLLMService()
+        mongoDBService = MongoDBService()
+        agentCustomTools = AgentCustomTools()
 
-    def route_by_query(self, state: dict):
-        """Main method to choose the appropriate sources and route to its node"""
-        # First, determine the best data source
-        decision = self.routingService.determine_data_source(state.question)
+        employees_db = MongoDBDatabase(client=mongoDBService.Client,database='XYZCompanyData')
+        employees_toolkit = MongoDBDatabaseToolkit(db=employees_db, llm=Google_LLM.get_chat_model())
+        employees_tools = employees_toolkit.get_tools()
 
-        primary_source = decision.primary_source
-        employees_query = decision.employees_query
+        hr_policies_db = MongoDBDatabase(client=mongoDBService.Client,database='Policies')
+        hr_policies_toolkit = MongoDBDatabaseToolkit(db=hr_policies_db, llm=Google_LLM.get_chat_model())
+        hr_policies_tools = hr_policies_toolkit.get_tools()
 
-        if employees_query == True:
-            return "employees_data_retriever"
+        all_tools = employees_tools + hr_policies_tools
 
-        elif "mongo" in primary_source.lower():
-            return "hr_mongodb_retriever"
+        all_tools.append(agentCustomTools.TextFile_HR_policies_query)
 
-        elif "text" in primary_source.lower():
-            return "hr_textfile_retriever"
-        
-        else:
-            state["context"] = "irrelevant data"
-            return "generator"
-
-
-    def HR_Policy_MongoDB_Node(self, state: dict):
-        self.vectorstore = self.chromaDBService.initialize_collection(collection_name="HR_Policy_Collection", data_source = "mongo")
-        docs = self.vectorstore.as_retriever().invoke(state.question)
-        return {"context": docs}
-    
-
-    def HR_Policy_TextFileDB_Node(self, state: dict):
-        self.vectorstore = self.chromaDBService.initialize_collection(collection_name="HR_Policy_Collection", data_source = "textfile")
-        docs = self.vectorstore.as_retriever().invoke(state.question)
-        return {"context": docs}
-    
-    
-    def Employees_Data_Query_Tool_Node(self, state: dict):
-    
-        docs = self.mongoDBHandler.query_employees_database(state.question)
-
-        # Convert MongoDB dicts to LangChain Documents
-        document_objects = []
-        for emp in docs["results"]:
-            # Create a string representation for the LLM
-            content = f"Employee: {emp['employee_name']}, Department: {emp['department']}, Title: {emp['job_title']}, Joined: {emp['date_joined'].strftime('%Y-%m-%d')}"
-            
-            document_objects.append(
-                Document(
-                    page_content=content,  # ← Required field for Document
-                    metadata={
-                        "employee_id": emp["employee_id"],
-                        "department": emp["department"],
-                        "date_joined": emp["date_joined"]
-                    }
-                )
-            )
-        
-        return {"context": document_objects}
-        
-
-    def generator_node(self, state: dict):
-
-        hr_prompt = ChatPromptTemplate.from_messages([
-            ("system", generator_node_system_prompt),
-            ("user", "{question}")
-        ])
-        chain = hr_prompt | self.llm  
-        return {"response": chain.invoke({
-            "question": state.question,
-            "context": state.context
-        })}
-
-
-    def build_graph(self):
-        workflow = StateGraph(AgentState)
-
-        # Add nodes
-        workflow.add_node("hr_mongodb_retriever", self.HR_Policy_MongoDB_Node)
-        workflow.add_node("hr_textfile_retriever", self.HR_Policy_TextFileDB_Node)
-        workflow.add_node("employees_data_retriever", self.Employees_Data_Query_Tool_Node)
-        workflow.add_node("generator", self.generator_node)
-
-        workflow.add_conditional_edges(
-            START,
-            self.route_by_query,
-            {
-                "hr_mongodb_retriever": "hr_mongodb_retriever",
-                "hr_textfile_retriever":"hr_textfile_retriever",
-                "employees_data_retriever":"employees_data_retriever",
-                "generator":"generator"
-            }
+        model = Google_LLM.get_chat_model()
+        self.agent = create_react_agent(
+            # Dynamically configure the model with tools based on runtime context
+            model,
+            # Initialize with all tools available
+            tools=all_tools,
+            checkpointer=MongoDBSaver(mongoDBService.Client)
         )
 
-        workflow.add_edge("hr_mongodb_retriever", "generator")
-
-        workflow.add_edge("hr_textfile_retriever", "generator")
-
-        workflow.add_edge("employees_data_retriever", "generator")
-
-        workflow.add_edge("generator", END)
-
         
-        # Compile
-        self.app = workflow.compile()
-        
-
-
     def generate_LLM_Answer(self, user_prompt: str) -> str:
-        result = self.app.invoke({"question": user_prompt})
-        return result["response"].content
-        
+        response = self.agent.invoke(
+            {
+                "messages": [SystemMessage(content=MONGODB_AGENT_SYSTEM_PROMPT), HumanMessage(content=user_prompt)]
+            },
+            {"configurable": {"thread_id": "movie_query_1"}}
+        )
+        return response["messages"][-1].content
     
